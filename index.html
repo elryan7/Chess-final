@@ -29,6 +29,13 @@
       font-size: 18px;
       color: #333;
     }
+    #promotion-selector {
+      display: none;
+      position: absolute;
+      background: white;
+      border: 1px solid black;
+      padding: 10px;
+    }
   </style>
 </head>
 <body>
@@ -45,17 +52,25 @@
       <option value="5">Maître</option>
     </select>
     <div id="status">Tour des Blancs</div>
+    <div id="promotion-selector">
+      <button onclick="promotePawn('q')">Reine</button>
+      <button onclick="promotePawn('r')">Tour</button>
+      <button onclick="promotePawn('b')">Fou</button>
+      <button onclick="promotePawn('n')">Cavalier</button>
+    </div>
   </div>
   <script>
 const SQUARE_SIZE = 60;
 const BOARD_SIZE = 8 * SQUARE_SIZE;
 let board = [];
 let selectedPiece = null;
+let possibleMoves = [];
 let currentPlayer = 'white';
 let gameMode = 'pvp';
 let aiDifficulty = 1;
 let isAnimating = false;
 let animation = null;
+let promotionPending = null;
 
 function setup() {
   createCanvas(BOARD_SIZE, BOARD_SIZE).parent('game-container');
@@ -87,6 +102,7 @@ function initializeBoard() {
 
 function draw() {
   drawBoard();
+  drawPossibleMoves();
   drawPieces();
   if (isAnimating) {
     animateMove();
@@ -98,6 +114,15 @@ function drawBoard() {
     for (let j = 0; j < 8; j++) {
       fill((i + j) % 2 === 0 ? '#f0d9b5' : '#b58863');
       rect(j * SQUARE_SIZE, i * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
+    }
+  }
+}
+
+function drawPossibleMoves() {
+  if (selectedPiece && possibleMoves.length > 0) {
+    fill(0, 255, 0, 100);
+    for (let move of possibleMoves) {
+      rect(move.col * SQUARE_SIZE, move.row * SQUARE_SIZE, SQUARE_SIZE, SQUARE_SIZE);
     }
   }
 }
@@ -122,26 +147,31 @@ function drawPieces() {
 }
 
 function mousePressed() {
-  if (isAnimating) return;
+  if (isAnimating || promotionPending) return;
   let row = floor(mouseY / SQUARE_SIZE);
   let col = floor(mouseX / SQUARE_SIZE);
   if (row < 0 || row >= 8 || col < 0 || col >= 8) return;
 
   if (selectedPiece) {
     if (isValidMove(selectedPiece.row, selectedPiece.col, row, col)) {
-      startAnimation(selectedPiece.row, selectedPiece.col, row, col);
+      let piece = board[selectedPiece.row][selectedPiece.col];
+      let isPawnPromotion = piece[0] === 'p' && (row === 0 || row === 7);
+      startAnimation(selectedPiece.row, selectedPiece.col, row, col, isPawnPromotion);
       selectedPiece = null;
+      possibleMoves = [];
     } else {
       selectedPiece = null;
+      possibleMoves = [];
     }
   } else {
     if (board[row][col] && board[row][col].endsWith(currentPlayer[0])) {
       selectedPiece = { row, col };
+      possibleMoves = getPossibleMoves(row, col, board[row][col][0], currentPlayer);
     }
   }
 }
 
-function startAnimation(fromRow, fromCol, toRow, toCol) {
+function startAnimation(fromRow, fromCol, toRow, toCol, isPawnPromotion = false) {
   isAnimating = true;
   animation = {
     fromX: fromCol * SQUARE_SIZE + SQUARE_SIZE / 2,
@@ -149,12 +179,17 @@ function startAnimation(fromRow, fromCol, toRow, toCol) {
     toX: toCol * SQUARE_SIZE + SQUARE_SIZE / 2,
     toY: toRow * SQUARE_SIZE + SQUARE_SIZE / 2,
     piece: board[fromRow][fromCol],
-    progress: 0
+    progress: 0,
+    toRow,
+    toCol,
+    fromRow,
+    fromCol,
+    isPawnPromotion
   };
 }
 
 function animateMove() {
-  let { fromX, fromY, toX, toY, piece, progress } = animation;
+  let { fromX, fromY, toX, toY, piece, progress, toRow, toCol, fromRow, fromCol, isPawnPromotion } = animation;
   let x = lerp(fromX, toX, progress);
   let y = lerp(fromY, toY, progress);
   fill(piece.endsWith('w') ? 'white' : 'black');
@@ -166,19 +201,40 @@ function animateMove() {
   text(pieceSymbol, x, y);
   animation.progress += 0.05;
   if (animation.progress >= 1) {
-    let fromRow = floor(fromY / SQUARE_SIZE);
-    let fromCol = floor(fromX / SQUARE_SIZE);
-    let toRow = floor(toY / SQUARE_SIZE);
-    let toCol = floor(toX / SQUARE_SIZE);
     board[toRow][toCol] = board[fromRow][fromCol];
     board[fromRow][fromCol] = '';
-    isAnimating = false;
-    animation = null;
-    currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
-    updateStatus();
-    if (gameMode === 'pve' && currentPlayer === 'black') {
-      setTimeout(makeAIMove, 500);
+    if (isPawnPromotion) {
+      promotionPending = { row: toRow, col: toCol };
+      showPromotionSelector(toCol * SQUARE_SIZE, toRow * SQUARE_SIZE);
+    } else {
+      completeMove();
     }
+  }
+}
+
+function showPromotionSelector(x, y) {
+  let selector = document.getElementById('promotion-selector');
+  selector.style.display = 'block';
+  selector.style.left = `${x + SQUARE_SIZE}px`;
+  selector.style.top = `${y}px`;
+}
+
+function promotePawn(pieceType) {
+  if (promotionPending) {
+    board[promotionPending.row][promotionPending.col] = `${pieceType}_${currentPlayer[0]}`;
+    document.getElementById('promotion-selector').style.display = 'none';
+    promotionPending = null;
+    completeMove();
+  }
+}
+
+function completeMove() {
+  isAnimating = false;
+  animation = null;
+  currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
+  updateStatus();
+  if (gameMode === 'pve' && currentPlayer === 'black') {
+    setTimeout(makeAIMove, 500);
   }
 }
 
@@ -334,7 +390,11 @@ function findKing(player) {
 function makeAIMove() {
   let move = minimax(aiDifficulty, 'black', -Infinity, Infinity).move;
   if (move) {
-    startAnimation(move.fromRow, move.fromCol, move.toRow, move.toCol);
+    let isPawnPromotion = board[move.fromRow][move.fromCol][0] === 'p' && (move.toRow === 0 || move.toRow === 7);
+    startAnimation(move.fromRow, move.fromCol, move.toRow, move.toCol, isPawnPromotion);
+    if (isPawnPromotion) {
+      setTimeout(() => promotePawn('q'), 1000); // AI automatically promotes to queen
+    }
   }
 }
 
@@ -402,8 +462,11 @@ function evaluateBoard() {
 function resetGame() {
   initializeBoard();
   selectedPiece = null;
+  possibleMoves = [];
   isAnimating = false;
   animation = null;
+  promotionPending = null;
+  document.getElementById('promotion-selector').style.display = 'none';
   currentPlayer = 'white';
   updateStatus();
 }
