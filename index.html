@@ -36,6 +36,15 @@
       border: 1px solid black;
       padding: 10px;
     }
+    #button-container {
+      margin-top: 10px;
+    }
+    #button-container button {
+      margin: 5px;
+      padding: 10px;
+      font-size: 16px;
+      cursor: pointer;
+    }
   </style>
 </head>
 <body>
@@ -52,6 +61,10 @@
       <option value="5">Maître</option>
     </select>
     <div id="status">Tour des Blancs</div>
+    <div id="button-container">
+      <button onclick="resetGame()">Recommencer</button>
+      <button onclick="surrender()">Abandonner</button>
+    </div>
     <div id="promotion-selector">
       <button onclick="promotePawn('q')">Reine</button>
       <button onclick="promotePawn('r')">Tour</button>
@@ -71,6 +84,7 @@ let aiDifficulty = 1;
 let isAnimating = false;
 let animation = null;
 let promotionPending = null;
+let gameOver = false;
 
 function setup() {
   createCanvas(BOARD_SIZE, BOARD_SIZE).parent('game-container');
@@ -97,6 +111,7 @@ function initializeBoard() {
     ['r_w', 'n_w', 'b_w', 'q_w', 'k_w', 'b_w', 'n_w', 'r_w']
   ];
   currentPlayer = 'white';
+  gameOver = false;
   updateStatus();
 }
 
@@ -147,7 +162,8 @@ function drawPieces() {
 }
 
 function mousePressed() {
-  if (isAnimating || promotionPending) return;
+  if (isAnimating || promotionPending || gameOver) return;
+  if (gameMode === 'pve' && currentPlayer === 'black') return; // Prevent player from moving black pieces in PvE
   let row = floor(mouseY / SQUARE_SIZE);
   let col = floor(mouseX / SQUARE_SIZE);
   if (row < 0 || row >= 8 || col < 0 || col >= 8) return;
@@ -203,10 +219,13 @@ function animateMove() {
   if (animation.progress >= 1) {
     board[toRow][toCol] = board[fromRow][fromCol];
     board[fromRow][fromCol] = '';
-    if (isPawnPromotion) {
+    if (isPawnPromotion && (gameMode !== 'pve' || currentPlayer === 'white')) {
       promotionPending = { row: toRow, col: toCol };
       showPromotionSelector(toCol * SQUARE_SIZE, toRow * SQUARE_SIZE);
     } else {
+      if (isPawnPromotion && gameMode === 'pve' && currentPlayer === 'black') {
+        board[toRow][toCol] = `q_${currentPlayer[0]}`; // AI promotes to queen
+      }
       completeMove();
     }
   }
@@ -233,7 +252,7 @@ function completeMove() {
   animation = null;
   currentPlayer = currentPlayer === 'white' ? 'black' : 'white';
   updateStatus();
-  if (gameMode === 'pve' && currentPlayer === 'black') {
+  if (gameMode === 'pve' && currentPlayer === 'black' && !gameOver) {
     setTimeout(makeAIMove, 500);
   }
 }
@@ -332,9 +351,11 @@ function isInBounds(row, col) {
 }
 
 function updateStatus() {
+  if (gameOver) return;
   let status = `Tour des ${currentPlayer === 'white' ? 'Blancs' : 'Noirs'}`;
   if (isCheckmate(currentPlayer)) {
     status = `Échec et mat ! ${currentPlayer === 'white' ? 'Noirs' : 'Blancs'} gagnent !`;
+    gameOver = true;
   } else if (isCheck(currentPlayer)) {
     status += ' (Échec)';
   }
@@ -388,13 +409,11 @@ function findKing(player) {
 }
 
 function makeAIMove() {
+  if (gameOver) return;
   let move = minimax(aiDifficulty, 'black', -Infinity, Infinity).move;
   if (move) {
     let isPawnPromotion = board[move.fromRow][move.fromCol][0] === 'p' && (move.toRow === 0 || move.toRow === 7);
     startAnimation(move.fromRow, move.fromCol, move.toRow, move.toCol, isPawnPromotion);
-    if (isPawnPromotion) {
-      setTimeout(() => promotePawn('q'), 1000); // AI automatically promotes to queen
-    }
   }
 }
 
@@ -402,9 +421,10 @@ function minimax(depth, player, alpha, beta) {
   if (depth === 0 || isCheckmate(player)) {
     return { score: evaluateBoard(), move: null };
   }
-  let bestMove = null;
+  let bestMoves = [];
   let bestScore = player === 'black' ? -Infinity : Infinity;
   let moves = getAllPossibleMoves(player);
+  moves = shuffleArray(moves); // Randomize moves to avoid repetitive patterns
   for (let move of moves) {
     let tempBoard = board.map(row => row.slice());
     board[move.toRow][move.toCol] = board[move.fromRow][move.fromCol];
@@ -414,20 +434,60 @@ function minimax(depth, player, alpha, beta) {
     if (player === 'black') {
       if (score > bestScore) {
         bestScore = score;
-        bestMove = move;
+        bestMoves = [move];
+      } else if (score === bestScore) {
+        bestMoves.push(move);
       }
       alpha = max(alpha, bestScore);
       if (beta <= alpha) break;
     } else {
       if (score < bestScore) {
         bestScore = score;
-        bestMove = move;
+        bestMoves = [move];
+      } else if (score === bestScore) {
+        bestMoves.push(move);
       }
       beta = min(beta, bestScore);
       if (beta <= alpha) break;
     }
   }
-  return { score: bestScore, move: bestMove };
+  return { score: bestScore, move: bestMoves[Math.floor(Math.random() * bestMoves.length)] };
+}
+
+function shuffleArray(array) {
+  for (let i = array.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [array[i], array[j]] = [array[j], array[i]];
+  }
+  return array;
+}
+
+function evaluateBoard() {
+  let score = 0;
+  let pieceValues = { 'p': 100, 'n': 320, 'b': 330, 'r': 500, 'q': 900, 'k': 20000 };
+  let centerSquares = [[3, 3], [3, 4], [4, 3], [4, 4]];
+  let mobilityBonus = 10;
+  let centerControlBonus = 50;
+
+  for (let i = 0; i < 8; i++) {
+    for (let j = 0; j < 8; j++) {
+      if (board[i][j]) {
+        let value = pieceValues[board[i][j][0]];
+        let pieceColor = board[i][j].endsWith('w') ? 'white' : 'black';
+        score += pieceColor === 'white' ? value : -value;
+
+        // Mobility bonus
+        let moves = getPossibleMoves(i, j, board[i][j][0], pieceColor);
+        score += pieceColor === 'white' ? moves.length * mobilityBonus : -moves.length * mobilityBonus;
+
+        // Center control bonus
+        if (centerSquares.some(([r, c]) => r === i && c === j)) {
+          score += pieceColor === 'white' ? centerControlBonus : -centerControlBonus;
+        }
+      }
+    }
+  }
+  return score;
 }
 
 function getAllPossibleMoves(player) {
@@ -445,18 +505,9 @@ function getAllPossibleMoves(player) {
   return moves;
 }
 
-function evaluateBoard() {
-  let score = 0;
-  let pieceValues = { 'p': 100, 'n': 320, 'b': 330, 'r': 500, 'q': 900, 'k': 20000 };
-  for (let i = 0; i < 8; i++) {
-    for (let j = 0; j < 8; j++) {
-      if (board[i][j]) {
-        let value = pieceValues[board[i][j][0]];
-        score += board[i][j].endsWith('w') ? value : -value;
-      }
-    }
-  }
-  return score;
+function surrender() {
+  gameOver = true;
+  document.getElementById('status').textContent = `Partie abandonnée ! ${currentPlayer === 'white' ? 'Noirs' : 'Blancs'} gagnent !`;
 }
 
 function resetGame() {
@@ -468,6 +519,7 @@ function resetGame() {
   promotionPending = null;
   document.getElementById('promotion-selector').style.display = 'none';
   currentPlayer = 'white';
+  gameOver = false;
   updateStatus();
 }
   </script>
