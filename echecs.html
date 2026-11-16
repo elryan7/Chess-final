@@ -5,17 +5,18 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Jeu d'Échecs</title>
 <style>
-:root{--s:min(92vw,560px)}
+:root{--s:min(94vw,calc(100vh - 190px),680px)}
 *{box-sizing:border-box}
-body{margin:0;min-height:100vh;display:flex;justify-content:center;align-items:flex-start;background:#2b2a28;color:#eee;font-family:system-ui,Arial,sans-serif;padding:14px}
+body{margin:0;min-height:100vh;display:flex;justify-content:center;align-items:flex-start;background:#2b2a28;color:#eee;font-family:system-ui,Arial,sans-serif;padding:12px;overflow-x:hidden}
 #app{display:flex;flex-wrap:wrap;gap:16px;justify-content:center}
-#left{width:var(--s)}
+#left{width:var(--s);max-width:100%}
 .bar{display:flex;flex-wrap:wrap;gap:6px;margin-bottom:8px}
 select,button{font-size:14px;padding:7px 10px;border-radius:6px;border:1px solid #555;background:#3c3a37;color:#eee;cursor:pointer}
 button:hover{background:#4d4a46}
 #status{margin:8px 0;font-size:18px;min-height:26px;font-weight:600}
-#board{width:var(--s);height:var(--s);display:grid;grid-template-columns:repeat(8,1fr);border:3px solid #111;position:relative;user-select:none}
-.sq{position:relative;display:flex;align-items:center;justify-content:center;font-size:calc(var(--s)/8*.78);line-height:1;cursor:pointer}
+#board{width:var(--s);height:var(--s);aspect-ratio:1/1;display:grid;grid-template-columns:repeat(8,minmax(0,1fr));grid-template-rows:repeat(8,minmax(0,1fr));outline:3px solid #111;position:relative;user-select:none;touch-action:manipulation}
+.sq{position:relative;display:flex;align-items:center;justify-content:center;min-width:0;min-height:0;overflow:hidden;font-size:calc(var(--s)/8*.8);line-height:1;cursor:pointer;font-family:'Segoe UI Symbol','Noto Sans Symbols2','DejaVu Sans','Arial Unicode MS',sans-serif}
+.sq span{display:block;line-height:1;transform:translateY(-4%)}
 .l{background:#f0d9b5}.d{background:#b58863}
 .last{box-shadow:inset 0 0 0 100px rgba(255,235,59,.4)}
 .sel{box-shadow:inset 0 0 0 100px rgba(80,200,80,.5)}
@@ -29,7 +30,7 @@ button:hover{background:#4d4a46}
 #promo{position:absolute;inset:0;background:rgba(0,0,0,.6);display:flex;align-items:center;justify-content:center;gap:8px;z-index:5}
 #promo[hidden]{display:none}
 #promo button{font-size:calc(var(--s)/9);padding:6px 12px;background:#eee;color:#111}
-#moves{width:min(92vw,220px);max-height:560px;overflow:auto;background:#3c3a37;border-radius:8px;padding:10px;font-size:15px}
+#moves{width:min(94vw,220px);max-height:var(--s);overflow:auto;background:#3c3a37;border-radius:8px;padding:10px;font-size:15px}
 #moves h3{margin:0 0 8px;font-size:15px}
 #moves div{display:grid;grid-template-columns:30px 1fr 1fr;padding:2px 0}
 </style>
